@@ -33,7 +33,10 @@ class MethodDeepGCNResNet(nn.Module):
         torch.manual_seed(seed)
         self.depth = depth
         self.gc_list = [None] * self.depth
+        
+        # Se inicializa una lista de residuos por cada capa de la red.
         self.residual_weight_list = [None] * self.depth
+
         if self.depth == 1:
             self.gc_list[self.depth-1] = GraphConvolution(nfeat, nclass)
             self.residual_weight_list[self.depth-1] = Parameter(torch.FloatTensor(nfeat, nclass))
@@ -77,7 +80,11 @@ class MethodDeepGCNResNet(nn.Module):
         for i in range(self.depth-1):
             x = F.relu(self.gc_list[i](x, adj))
             x = F.dropout(x, self.dropout, training=self.training)
+
+        # No se le añade ningún residuo a las capas de la red, simplemente la
+        # salida de cada capa es la multiplicación de X por la matriz de adyacencia.
         y = self.gc_list[self.depth-1](x, adj)
+
         pred_y = F.log_softmax(y, dim=1)
         return pred_y
 
@@ -88,9 +95,19 @@ class MethodDeepGCNResNet(nn.Module):
             x = F.relu(self.gc_list[i](x, adj) + torch.mm(raw_x, self.residual_weight_list[0]))
             x = F.dropout(x, self.dropout, training=self.training)
         if self.depth == 1:
+
+            # Si se trata de la primera capa de la red, al residuo raw de la primera capa no es posible
+            # añadirle el output de la capa anterior (residual_weight_list[self.depth-1]), por este motivo
+            # se realiza la distinción entre la primera capa de la red y el resto.
             y = self.gc_list[self.depth - 1](x, adj) + torch.mm(raw_x, self.residual_weight_list[0])
+
         else:
-            y = self.gc_list[self.depth-1](x, adj) + torch.mm(torch.mm(raw_x, self.residual_weight_list[0]), self.residual_weight_list[self.depth-1])
+
+            # El residuo raw añadido es la multiplicación de la salida de la capa anterior (residual_weight_list[self.depth-1))
+            # por el input original de la red (X * residual_weight_list[0])
+            y = self.gc_list[self.depth-1](x, adj) +
+                torch.mm(torch.mm(raw_x, self.residual_weight_list[0]), self.residual_weight_list[self.depth-1])
+
         pred_y = F.log_softmax(y, dim=1)
         return pred_y
 
@@ -100,7 +117,11 @@ class MethodDeepGCNResNet(nn.Module):
         for i in range(self.depth-1):
             x = F.relu(self.gc_list[i](x, adj) + torch.mm(x, self.residual_weight_list[i]))
             x = F.dropout(x, self.dropout, training=self.training)
+
+        # El residuo naive añadido es la multiplicación de la matriz X por la salida
+        # de la capa anterior (residual_weight_list[self.depth-1]).
         y = self.gc_list[self.depth-1](x, adj) + torch.mm(x, self.residual_weight_list[self.depth-1])
+
         pred_y = F.log_softmax(y, dim=1)
         return pred_y
 
@@ -111,9 +132,20 @@ class MethodDeepGCNResNet(nn.Module):
             x = F.relu(self.gc_list[i](x, adj) + torch.spmm(adj, torch.mm(raw_x, self.residual_weight_list[0])))
             x = F.dropout(x, self.dropout, training=self.training)
         if self.depth == 1:
+
+            # Si se trata de la primera capa de la red, al residuo de la primera capa no es posible
+            # añadirle el output de la capa anterior (residual_weight_list[self.depth-1]), por este motivo
+            # se realiza la distinción entre la primera capa de la red y el resto.
             y = self.gc_list[self.depth - 1](x, adj) + torch.spmm(adj, torch.mm(raw_x, self.residual_weight_list[0]))
+
         else:
-            y = self.gc_list[self.depth-1](x, adj) + torch.spmm(adj, torch.mm(torch.mm(raw_x, self.residual_weight_list[0]), self.residual_weight_list[self.depth-1]))
+
+            # El residuo graph_raw añadido a la salida de cada capa es la salida de la
+            # capa anterior (residual_weight_list[self.depth-1]) multiplicada por
+            # la matriz de adyacencia por el input original (X * residual_weight_list[0]).
+            y = self.gc_list[self.depth-1](x, adj) + 
+                torch.spmm(adj, torch.mm(torch.mm(raw_x, self.residual_weight_list[0]), self.residual_weight_list[self.depth-1]))
+
         pred_y = F.log_softmax(y, dim=1)
         return pred_y
 
@@ -123,7 +155,11 @@ class MethodDeepGCNResNet(nn.Module):
         for i in range(self.depth-1):
             x = F.relu(self.gc_list[i](x, adj) + torch.spmm(adj, torch.mm(x, self.residual_weight_list[i])))
             x = F.dropout(x, self.dropout, training=self.training)
+        
+        # El residuo graph_naive añadido es la multiplicación de la matriz de adyacencia por
+        # la salida de la capa anterior (X * residual_weight_list[self.depth-1]).
         y = self.gc_list[self.depth-1](x, adj) + torch.spmm(adj, torch.mm(x, self.residual_weight_list[self.depth-1]))
+
         pred_y = F.log_softmax(y, dim=1)
         return pred_y
 
